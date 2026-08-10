@@ -36,9 +36,10 @@
 
   .dores{padding:40px 0 8px}
   .dores .wrap{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .dores .intro{display:block;text-align:center;margin-bottom:28px}
   .dor{border:1px solid var(--borda);border-radius:12px;padding:20px;font-size:15px}
   .dor b{display:block;margin-bottom:6px;font-size:14px;color:var(--sec);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
-  @media(max-width:720px){.dores .wrap{grid-template-columns:1fr}}
+  @media(max-width:720px){.dores .wrap{grid-template-columns:1fr}.dores .intro{display:block}}
 
   section{padding:64px 0}
   h2{font-family:'Source Serif 4',serif;font-weight:600;font-size:clamp(26px,4vw,34px);letter-spacing:-.02em;margin-bottom:8px}
@@ -116,6 +117,10 @@
 </div>
 
 <div class="dores">
+  <div class="wrap intro" style="text-align:center;margin-bottom:28px;display:block">
+    <h2>«O dev implementou <mark>a versão errada</mark>.»</h2>
+    <p class="sub" style="margin:10px auto 0">Se essa frase já foi dita no seu time, você sabe quanto ela custa — em sprint, em dinheiro e em paciência. Ela nasce de três jeitos:</p>
+  </div>
   <div class="wrap">
     <div class="dor"><b>A dor nº 1</b>Decisão de produto espalhada em print de WhatsApp, comentário de Figma e reunião que ninguém anotou.</div>
     <div class="dor"><b>A dor nº 2</b>Dev implementando a partir de mockup desatualizado — e descobrindo tarde demais.</div>
