@@ -1,0 +1,2229 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<!--
+  ══════════════════════════════════════════════════════════════
+  CRIVO · template v2 — painel de validação colaborativa (FUNCIONAL)
+  Visual: redesign v2 aprovado em 10/08/2026 (ações contextuais).
+  Lógica: tempo real via Supabase + modo demonstração automático.
+
+  IMPLANTAÇÃO (por cliente):
+  1. Trocar {{SUPABASE_URL}} e {{SUPABASE_KEY}} pelas credenciais
+     do Supabase do CLIENTE (nunca reaproveitar banco de outro).
+     Enquanto os placeholders existirem, o painel roda em MODO
+     DEMONSTRAÇÃO (sem banco, dados fictícios — bom p/ screenshot).
+  2. Trocar PROJETO, o cabeçalho do projeto e a const DATA.
+  3. Infra (tabelas, RPCs, storage): ver infraestrutura.md da fábrica.
+  ══════════════════════════════════════════════════════════════
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#F7F6F4">
+<title>Crivo — Painel de validação · PetAgenda</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
+<style>
+    :root {
+      --yellow: #FFD43B;
+      --yellow-soft: #FFF3BF;
+      --ink: #191919;
+      --approved: #0F7B6C;
+      --approved-soft: #F2F8F6;
+      --muted: #6F6E6A; /* contraste AA para textos pequenos */
+      --border: #E9E9E7;
+      --surface: #FFFFFF;
+      --canvas: #F7F6F4;
+      --surface-soft: #FBFBF9;
+      --role-product: #191919;
+      --role-design: #8D6708;
+      --role-dev: #39607A;
+      --role-client: #9A4F32;
+      --serif: 'Source Serif 4', Georgia, serif;
+      --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --footer-height: 76px;
+      --shadow-card: 0 18px 45px rgba(25, 25, 25, 0.055);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, textarea, select { font: inherit; }
+    button, summary { -webkit-tap-highlight-color: transparent; }
+    button { color: inherit; }
+    ::selection { background: var(--yellow); color: var(--ink); }
+    :focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
+    .visually-hidden {
+      position: absolute !important;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0);
+      white-space: nowrap; border: 0;
+    }
+    .shell { width: min(1180px, calc(100% - 48px)); margin-inline: auto; }
+
+    /* Header ------------------------------------------------------------- */
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(255, 255, 255, 0.97);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+    }
+    .app-header__top {
+      min-height: 74px;
+      display: grid;
+      grid-template-columns: auto minmax(220px, 1fr) auto auto;
+      gap: 24px;
+      align-items: center;
+      padding-block: 13px 11px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 1px;
+      font-family: var(--serif);
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.025em;
+      white-space: nowrap;
+    }
+    .brand__word {
+      position: relative;
+      isolation: isolate;
+      padding-inline: 4px;
+    }
+    .brand__word::before {
+      content: '';
+      position: absolute;
+      z-index: -1;
+      left: 0;
+      right: 0;
+      bottom: -1px;
+      height: 48%;
+      background: var(--yellow);
+      border-radius: 4px 6px 5px 3px;
+      transform: rotate(-0.8deg);
+    }
+    .project-heading { min-width: 0; }
+    .project-heading__name {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: 19px;
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.012em;
+    }
+    .project-heading__description {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .connection-indicator {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .connection-indicator--live { background: var(--ink); color: var(--yellow); }
+    .connection-indicator--demo { background: var(--yellow-soft); color: #6E5200; }
+    .project-progress { min-width: 158px; }
+    .project-progress__top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .project-progress__count { color: var(--ink); font-size: 12px; font-weight: 800; }
+    .project-progress__track {
+      height: 6px;
+      margin-top: 6px;
+      overflow: hidden;
+      background: var(--border);
+      border-radius: 999px;
+    }
+    .project-progress__value {
+      display: block;
+      width: 19%;
+      height: 100%;
+      background: var(--ink);
+      border-radius: inherit;
+    }
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      overflow-x: auto;
+      padding-block: 8px 11px;
+      scrollbar-width: none;
+    }
+    .filter-bar::-webkit-scrollbar { display: none; }
+    .filter-chip {
+      flex: 0 0 auto;
+      min-height: 31px;
+      padding: 6px 13px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: default;
+    }
+    .filter-chip.is-active { border-color: var(--ink); background: var(--ink); color: #fff; }
+
+    /* First-visit guide -------------------------------------------------- */
+    .welcome-guide {
+      position: relative;
+      width: 100%;
+      background: var(--yellow-soft);
+      border-bottom: 1px solid #E5D58C;
+    }
+    .welcome-guide:not([open]) { display: none; }
+    .welcome-guide__inner {
+      min-height: 64px;
+      padding-block: 11px;
+      padding-right: 92px;
+    }
+    .welcome-guide__text {
+      flex: 1;
+      margin: 0;
+      font-size: 12.5px;
+      line-height: 1.65;
+    }
+    .welcome-guide__text strong { font-family: var(--serif); font-size: 14px; }
+    .guide-approved { color: var(--approved); font-weight: 800; }
+    .guide-adjusted { color: #7A5C00; font-weight: 800; }
+    .welcome-guide__dismiss {
+      position: absolute;
+      top: 14px;
+      right: max(24px, calc((100vw - 1180px) / 2 + 24px));
+      list-style: none;
+      min-height: 34px;
+      padding: 7px 14px;
+      border: 1px solid var(--ink);
+      border-radius: 8px;
+      font-size: 11.5px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .welcome-guide__dismiss::-webkit-details-marker { display: none; }
+
+    /* Workspace and hierarchy ------------------------------------------ */
+    .workspace {
+      width: min(1040px, calc(100% - 48px));
+      margin-inline: auto;
+      padding: 28px 0 calc(var(--footer-height) + 78px);
+    }
+    .flow-section { margin-top: 56px; }
+    .flow-section:first-child { margin-top: 8px; }
+    .flow__header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
+      gap: 30px;
+      align-items: end;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .flow__title {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: clamp(25px, 3vw, 31px);
+      line-height: 1.14;
+      letter-spacing: -0.026em;
+    }
+    .flow__mark {
+      background: linear-gradient(transparent 62%, var(--yellow) 62%, var(--yellow) 94%, transparent 94%);
+      padding-inline: 2px;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+    .flow__description {
+      justify-self: end;
+      max-width: 430px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .flow__screens { display: grid; gap: 14px; }
+
+    /* Screen cards ------------------------------------------------------ */
+    .screen-card {
+      overflow: clip;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 1px 0 rgba(25, 25, 25, 0.02);
+    }
+    .screen-card.is-open { box-shadow: var(--shadow-card); }
+    .screen-card__toggle {
+      width: 100%;
+      min-height: 64px;
+      display: grid;
+      grid-template-columns: auto minmax(180px, 1fr) auto auto;
+      gap: 14px;
+      align-items: center;
+      padding: 13px 17px;
+      border: 0;
+      background: var(--surface);
+      text-align: left;
+      cursor: pointer;
+    }
+    .screen-card__toggle:hover { background: var(--surface-soft); }
+    .screen-card__code {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 28px;
+      padding: 5px 10px;
+      border-radius: 6px;
+      background: var(--ink);
+      color: var(--yellow);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.055em;
+      white-space: nowrap;
+    }
+    .screen-card__name {
+      min-width: 0;
+      font-family: var(--serif);
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.012em;
+    }
+    .screen-card__meta { display: inline-flex; align-items: center; gap: 14px; }
+    .screen-card__comments, .screen-card__progress {
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .screen-card__progress {
+      min-width: 42px;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--ink);
+      font-weight: 800;
+      text-align: center;
+    }
+    .screen-card__chevron {
+      color: var(--muted);
+      font-size: 20px;
+      line-height: 1;
+      transform: rotate(0deg);
+      transition: transform 150ms ease;
+    }
+    .screen-card:not(.is-open) .screen-card__chevron { transform: rotate(-90deg); }
+    .screen-card:not(.is-open) .screen-card__body { display: none; }
+    .screen-card__body { border-top: 1px solid var(--border); }
+    .screen-card__conversation {
+      padding: 10px 17px;
+      background: #FCFBF7;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* Review items ------------------------------------------------------ */
+    .screen-card__items { background: var(--surface); }
+    .review-item {
+      display: grid;
+      grid-template-columns: 148px minmax(0, 1fr);
+      gap: 22px;
+      padding: 20px 20px 19px;
+      border-bottom: 1px solid #F0F0ED;
+      background: var(--surface);
+    }
+    .review-item--approved {
+      background: var(--approved-soft);
+      box-shadow: inset 3px 0 0 var(--approved);
+    }
+    .review-item--adjusted {
+      background: #FFFBE9;
+      box-shadow: inset 3px 0 0 var(--yellow);
+    }
+    .review-item--missing { background: #FFFDF4; }
+    .review-item--proposal {
+      background: #FFFDF7;
+      box-shadow: inset 3px 0 0 #E5D58C;
+    }
+    .review-item--locked { background: #FAFAF8; }
+    .review-item__label {
+      padding-top: 5px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      line-height: 1.45;
+      letter-spacing: 0.075em;
+      text-transform: uppercase;
+    }
+    .review-item__main { min-width: 0; }
+    .review-item__badges {
+      min-height: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 23px;
+      padding: 3px 8px;
+      border-radius: 5px;
+      font-size: 9px;
+      font-weight: 800;
+      line-height: 1.25;
+      letter-spacing: 0.045em;
+      text-transform: uppercase;
+    }
+    .badge--pending { border: 1px solid var(--border); background: #F4F4F1; color: var(--muted); }
+    .badge--missing { background: var(--yellow); color: var(--ink); }
+    .badge--proposal { background: var(--yellow-soft); color: #6E5200; }
+    .badge--locked { border: 1px solid var(--border); background: #EFEFED; color: #5F5F5C; }
+    .badge--signature { gap: 3px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); text-transform: none; letter-spacing: 0; }
+    .badge--signature-approved { border-color: rgba(15, 123, 108, 0.28); color: var(--approved); }
+    .badge--signature-adjusted { border-color: #E6C94E; background: #FFF8D7; color: #725600; }
+    .badge--implementation { background: var(--ink); color: var(--yellow); }
+    .badge--implemented { background: #343432; color: #F4F4F1; }
+    .role-produto { color: var(--role-product); }
+    .role-design { color: var(--role-design); }
+    .role-dev { color: var(--role-dev); }
+    .role-cliente { color: var(--role-client); }
+    .review-item__copy {
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      padding: 12px 14px;
+      border: 1px solid #ECECE8;
+      border-radius: 8px;
+      background: #FAFAF8;
+      font-size: 13.5px;
+      line-height: 1.58;
+    }
+    .review-item--missing .review-item__copy {
+      border-style: dashed;
+      color: var(--muted);
+      font-style: italic;
+    }
+    .review-item--locked .review-item__copy { border-left: 3px solid var(--muted); }
+    .review-item__note {
+      margin: 7px 0 0;
+      color: var(--muted);
+      font-size: 11.5px;
+      line-height: 1.58;
+    }
+    .revision-editor {
+      position: relative;
+      margin-top: 12px;
+      padding: 11px;
+      border: 1px solid #E4CA50;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.72);
+    }
+    .revision-editor__label {
+      display: block;
+      margin-bottom: 8px;
+      color: #6E5200;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .revision-editor__textarea {
+      width: 100%;
+      min-height: 82px;
+      resize: vertical;
+      padding: 11px 12px;
+      border: 2px solid var(--yellow);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 13.5px;
+      line-height: 1.55;
+    }
+    .revision-editor__save {
+      display: block;
+      margin-top: 6px;
+      color: #6E5200;
+      font-size: 10.5px;
+    }
+    .review-item__actions { margin-top: 11px; }
+    .review-item__action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+    .review-action {
+      min-height: 34px;
+      padding: 7px 11px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: default;
+    }
+    .review-action--approve.is-selected { border-color: #CFCFCA; background: var(--surface); color: var(--ink); }
+    .review-action--adjust.is-selected { border-color: var(--yellow); background: var(--yellow); color: var(--ink); }
+    .review-action--implement.is-selected { border-color: var(--ink); background: var(--ink); color: var(--yellow); }
+    .review-action--complete { border-color: #4A4A47; background: #343432; color: #fff; }
+    .review-action--clear { border-color: transparent; background: transparent; color: var(--muted); font-weight: 500; }
+    .review-action:disabled { opacity: 0.38; }
+    .review-item__locked-action {
+      display: inline-flex;
+      min-height: 34px;
+      align-items: center;
+      padding: 6px 10px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    /* Threads: structure retained for logic transplant ------------------ */
+    .review-thread { margin-top: 11px; }
+    .review-thread--screen { margin-top: 0; }
+    .review-thread__summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 34px;
+      list-style: none;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .review-thread__summary::-webkit-details-marker { display: none; }
+    .review-thread__label { color: var(--ink); }
+    .review-thread__summary::after {
+      content: '+';
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 17px;
+      font-weight: 500;
+    }
+    .review-thread[open] .review-thread__summary::after { content: '–'; }
+    .review-thread__count { margin-left: auto; white-space: nowrap; }
+    .thread {
+      margin-top: 7px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.78);
+    }
+    .thread__comments:empty { display: none; }
+    .thread__comment {
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .thread__comment + .thread__comment { margin-top: 6px; }
+    .thread__comment-meta { display: flex; flex-wrap: wrap; gap: 7px; align-items: baseline; color: var(--muted); font-size: 9.5px; }
+    .thread__author { font-size: 11px; }
+    .thread__comment p { margin: 5px 0 0; font-size: 11.5px; line-height: 1.55; }
+    .thread__composer {
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) auto;
+      gap: 7px;
+      margin-top: 7px;
+    }
+    .thread__attachment, .thread__send, .thread__input {
+      min-height: 38px;
+      border-radius: 8px;
+    }
+    .thread__attachment {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: default;
+    }
+    .thread__input {
+      min-width: 0;
+      padding: 8px 11px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 11.5px;
+    }
+    .thread__send {
+      padding-inline: 14px;
+      border: 1px solid var(--ink);
+      background: var(--ink);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: default;
+    }
+    .thread__preview { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+
+    /* Thread transplant aliases: compatible with the functional template renderer. */
+    .cmt { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 9px 11px; font-size: 11.5px; line-height: 1.5; }
+    .cmt b { font-size: 10.5px; }
+    .cmt .hora { margin-left: 6px; color: var(--muted); font-size: 9.5px; }
+    .cmt-form { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 7px; margin-top: 7px; }
+    .cmt-txt { min-width: 0; }
+    .cmt-prev { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+    .cmt-prev .pv { border-radius: 6px; background: var(--yellow-soft); padding: 2px 8px; font-size: 10px; }
+    .cmt-fotos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .cmt-fotos img { max-width: 46%; max-height: 140px; border: 1px solid var(--border); border-radius: 8px; }
+
+    /* New item ---------------------------------------------------------- */
+    .new-item { background: #FCFCFA; }
+    .new-item__summary {
+      min-height: 54px;
+      display: flex;
+      align-items: center;
+      padding: 12px 20px;
+      list-style: none;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.015em;
+      cursor: pointer;
+    }
+    .new-item__summary::-webkit-details-marker { display: none; }
+    .new-item__summary::after { content: '+'; margin-left: auto; font-size: 18px; font-weight: 500; }
+    .new-item[open] .new-item__summary::after { content: '–'; }
+    .new-item__form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 230px auto;
+      gap: 10px;
+      padding: 0 20px 18px 190px;
+      align-items: end;
+    }
+    .field-group { display: block; min-width: 0; }
+    .field-group--text { grid-column: 1 / -1; }
+    .field-label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
+    .field-control {
+      width: 100%;
+      min-height: 39px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 11.5px;
+    }
+    .field-control--textarea { grid-column: 1 / -1; min-height: 70px; resize: vertical; }
+    .new-item__save {
+      align-self: end;
+      min-height: 39px;
+      padding: 8px 15px;
+      border: 1px solid var(--ink);
+      border-radius: 8px;
+      background: var(--ink);
+      color: var(--yellow);
+      font-size: 11px;
+      font-weight: 800;
+      cursor: default;
+    }
+
+    /* Fixed footer ------------------------------------------------------ */
+    .app-footer {
+      position: fixed;
+      z-index: 120;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      min-height: var(--footer-height);
+      background: var(--ink);
+      color: #fff;
+      box-shadow: 0 -10px 30px rgba(25, 25, 25, 0.12);
+    }
+    .app-footer__inner {
+      width: min(1180px, calc(100% - 48px));
+      min-height: var(--footer-height);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-inline: auto;
+      padding-block: 10px;
+    }
+    .footer-stats { display: flex; align-items: center; gap: 13px; }
+    .footer-stat { display: inline-flex; align-items: baseline; gap: 5px; color: #BEBEB9; font-size: 10.5px; white-space: nowrap; }
+    .footer-stat strong { color: #fff; font-size: 13px; }
+    .footer-stat--approved strong { color: #8CCDC4; }
+    .footer-stat--adjusted strong { color: var(--yellow); }
+    .footer-reviewer {
+      border: 0;
+      background: transparent;
+      color: #AAA9A4;
+      font-size: 10.5px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .footer-reviewer strong { color: #fff; }
+    .footer-spacer { flex: 1; }
+    .footer-admin {
+      width: 38px;
+      min-width: 38px;
+      min-height: 36px;
+      padding: 0;
+      border: 1px solid #474744;
+      border-radius: 8px;
+      background: #343432;
+      color: #B6B6B0;
+      font-size: 14px;
+      cursor: default;
+    }
+    .footer-reports { display: flex; gap: 7px; }
+    .footer-report {
+      min-height: 38px;
+      padding: 8px 13px;
+      border: 1px solid #484845;
+      border-radius: 8px;
+      background: transparent;
+      color: #fff;
+      font-size: 10.5px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .footer-report--design { border-color: #fff; background: #fff; color: var(--ink); }
+    .footer-report--ia { border-color: var(--yellow); background: var(--yellow); color: var(--ink); }
+
+    /* Dialogs ----------------------------------------------------------- */
+    .app-dialog {
+      width: min(92vw, 780px);
+      max-height: min(86vh, 840px);
+      padding: 0;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+      color: var(--ink);
+      box-shadow: 0 30px 90px rgba(25, 25, 25, 0.25);
+    }
+    .app-dialog::backdrop { background: rgba(25, 25, 25, 0.56); backdrop-filter: blur(3px); }
+    .dialog__header {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 13px 17px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .dialog__header h2 { flex: 1; margin: 0; font-family: var(--serif); font-size: 17px; letter-spacing: -0.01em; }
+    .dialog__close {
+      width: 36px;
+      min-height: 36px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      font-size: 20px;
+      cursor: pointer;
+    }
+    .dialog__footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 11px 15px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .dialog-action {
+      min-height: 38px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: default;
+    }
+    .dialog-action--secondary { border: 1px solid var(--border); background: #EFEFED; color: var(--ink); }
+    .dialog-action--primary { border: 1px solid var(--yellow); background: var(--yellow); color: var(--ink); }
+    .report-dialog__content {
+      max-height: 62vh;
+      margin: 0;
+      overflow: auto;
+      padding: 20px;
+      background: var(--ink);
+      color: #E7E7E2;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11.5px;
+      line-height: 1.72;
+      white-space: pre-wrap;
+      tab-size: 2;
+    }
+    .login-dialog { width: min(92vw, 400px); }
+    .login-dialog__body { padding: 26px; }
+    .login-dialog .brand { font-size: 28px; }
+    .login-dialog h2 { margin: 20px 0 5px; font-family: var(--serif); font-size: 22px; letter-spacing: -0.018em; }
+    .login-dialog p { margin: 0 0 18px; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+    .login-dialog__field { display: block; margin-top: 9px; }
+    .login-dialog__field span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .055em; }
+    .login-dialog input, .login-dialog select {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 11px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 13px;
+    }
+    .login-dialog__start {
+      width: 100%;
+      min-height: 46px;
+      margin-top: 13px;
+      border: 1.5px solid var(--ink);
+      border-radius: 9px;
+      background: var(--yellow);
+      color: var(--ink);
+      font-weight: 800;
+      cursor: default;
+    }
+    .login-dialog__close {
+      position: absolute;
+      top: 13px;
+      right: 13px;
+    }
+
+    /* Mobile: redesigned rather than compressed ------------------------ */
+    @media (max-width: 760px) {
+      :root { --footer-height: 164px; }
+      .shell, .workspace, .app-footer__inner { width: min(100% - 24px, 100%); }
+      .app-header__top {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 10px 12px;
+        padding-block: 10px 8px;
+      }
+      .brand { font-size: 21px; }
+      .project-heading__name { font-size: 16px; }
+      .project-heading__description { display: none; }
+      .connection-indicator { min-height: 25px; padding: 4px 9px; font-size: 9.5px; }
+      .project-progress { grid-column: 1 / -1; min-width: 0; }
+      .project-progress__track { height: 5px; }
+      .filter-bar { gap: 6px; padding-block: 7px 9px; }
+      .filter-chip { min-height: 30px; padding: 5px 11px; font-size: 10.5px; }
+      .welcome-guide__inner { min-height: 70px; padding-block: 10px; padding-right: 74px; }
+      .welcome-guide__text { font-size: 11.5px; }
+      .welcome-guide__dismiss { top: 10px; right: 12px; min-height: 32px; padding: 6px 10px; font-size: 10.5px; }
+      .workspace { padding-top: 18px; padding-bottom: calc(var(--footer-height) + 40px); }
+      .flow-section { margin-top: 42px; }
+      .flow__header { grid-template-columns: 1fr; gap: 7px; margin-bottom: 13px; padding-bottom: 11px; }
+      .flow__title { font-size: 23px; }
+      .flow__description { justify-self: start; max-width: none; font-size: 11.5px; }
+      .flow__screens { gap: 11px; }
+      .screen-card__toggle {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 9px 10px;
+        min-height: 72px;
+        padding: 11px 12px;
+      }
+      .screen-card__code { min-height: 26px; padding: 4px 8px; font-size: 9.5px; }
+      .screen-card__name { font-size: 15px; }
+      .screen-card__meta { grid-column: 1 / 3; justify-content: flex-start; gap: 10px; padding-left: 1px; }
+      .screen-card__chevron { grid-column: 3; grid-row: 1 / 3; align-self: center; }
+      .screen-card__conversation { padding: 8px 12px; }
+      .review-item {
+        grid-template-columns: 1fr;
+        gap: 7px;
+        padding: 15px 13px;
+      }
+      .review-item__label { padding-top: 0; font-size: 9.5px; }
+      .review-item__badges { margin-bottom: 7px; }
+      .badge { min-height: 22px; font-size: 8.5px; }
+      .review-item__copy { padding: 11px 12px; font-size: 13px; }
+      .review-item__note { font-size: 11px; }
+      .review-item__action-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 7px;
+      }
+      .review-action { min-height: 44px; padding: 8px; }
+      .review-action--clear { min-height: 38px; }
+      .review-thread__summary { min-height: 42px; }
+      .thread { padding: 8px; }
+      .thread__composer { grid-template-columns: 42px minmax(0, 1fr); }
+      .thread__send { grid-column: 1 / -1; min-height: 42px; }
+      .thread__input, .thread__attachment { min-height: 42px; }
+      .new-item__summary { min-height: 50px; padding-inline: 13px; }
+      .new-item__form { grid-template-columns: 1fr; padding: 0 13px 15px; align-items: stretch; }
+      .field-group--text { grid-column: auto; }
+      .field-control--textarea { grid-column: auto; }
+      .new-item__save { min-height: 44px; }
+      .app-footer__inner {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-rows: auto auto;
+        gap: 7px 9px;
+        padding-block: 9px;
+      }
+      .footer-stats { grid-column: 1; grid-row: 1; gap: 9px; overflow: hidden; }
+      .footer-stat { gap: 3px; font-size: 9px; }
+      .footer-stat strong { font-size: 11px; }
+      .footer-reviewer {
+        display: block;
+        grid-column: 2;
+        grid-row: 1;
+        min-width: 0;
+        overflow: hidden;
+        padding: 0;
+        text-align: center;
+        text-overflow: ellipsis;
+      }
+      .footer-reviewer__prefix { display: none; }
+      .footer-spacer { display: none; }
+      .footer-admin { grid-column: 3; grid-row: 1; }
+      .footer-reports {
+        grid-column: 1 / -1;
+        grid-row: 3;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 7px;
+      }
+      .footer-report { min-height: 40px; padding: 7px 8px; font-size: 10px; }
+      .footer-report--ia { grid-column: 1 / -1; grid-row: 2; }
+      .app-dialog { width: calc(100vw - 20px); max-height: 90vh; }
+      .report-dialog__content { max-height: 62vh; padding: 14px; font-size: 10.5px; }
+      .dialog__footer { padding: 9px 10px; }
+      .dialog-action { flex: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+    }
+  
+
+    /* V2 — contextual action layer ------------------------------------- */
+    .badge--pending { display: none; }
+    .review-item__aside {
+      min-width: 0;
+      padding-top: 5px;
+    }
+    .review-item__aside .review-item__label { padding-top: 0; }
+    .review-item__aside .review-item__badges {
+      display: grid;
+      justify-items: start;
+      gap: 5px;
+      margin: 9px 0 0;
+    }
+    .review-item__aside .badge {
+      max-width: 100%;
+      min-height: 0;
+      white-space: normal;
+    }
+
+    .review-item__footer {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px 12px;
+      align-items: start;
+      margin-top: 12px;
+    }
+    .review-item__actions { min-width: 0; margin-top: 0; }
+    .review-item__action-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 7px;
+    }
+    .review-action {
+      min-height: 34px;
+      padding: 7px 12px;
+      border: 1px solid #CFCFCA;
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+    }
+    .review-action:hover { border-color: var(--ink); background: var(--surface-soft); }
+    .review-action:active { transform: translateY(1px); }
+    .review-action--approve.is-selected,
+    .review-action--adjust.is-selected,
+    .review-action--implement.is-selected {
+      border-color: #CFCFCA;
+      background: var(--surface);
+      color: var(--ink);
+    }
+    .review-action--validate { border-color: var(--ink); }
+    .review-action--clear {
+      border-color: transparent;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 600;
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+    .review-action--clear:hover { border-color: transparent; background: transparent; color: var(--ink); }
+
+    .decision-reopen { max-width: 520px; }
+    .decision-reopen__summary {
+      width: max-content;
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      list-style: none;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+      cursor: pointer;
+    }
+    .decision-reopen__summary::-webkit-details-marker,
+    .item-more-menu__trigger::-webkit-details-marker { display: none; }
+    .decision-reopen__panel {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 6px;
+      padding: 9px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-soft);
+    }
+
+    .item-more-menu { position: relative; width: max-content; }
+    .item-more-menu__trigger {
+      width: 38px;
+      min-width: 38px;
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      list-style: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .item-more-menu__trigger:hover { border-color: var(--ink); color: var(--ink); }
+    .item-more-menu[open] > .item-more-menu__trigger { border-color: var(--ink); background: var(--ink); color: var(--yellow); }
+    .item-more-menu__popover {
+      position: absolute;
+      z-index: 30;
+      top: calc(100% + 6px);
+      right: 0;
+      width: max-content;
+      min-width: 184px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      box-shadow: 0 16px 34px rgba(25, 25, 25, 0.14);
+    }
+    .item-more-menu--rule .item-more-menu__popover { right: auto; left: 0; }
+    .item-more-menu__action {
+      width: 100%;
+      min-height: 40px;
+      display: block;
+      padding: 9px 12px;
+      border: 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--ink);
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .item-more-menu__action:last-child { border-bottom: 0; }
+    .item-more-menu__action:hover { background: var(--yellow-soft); }
+
+    .review-item__locked-action {
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 0;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    /* The item thread keeps its complete transplant structure, but has one trigger. */
+    .review-item .review-thread {
+      min-width: 38px;
+      margin: 0;
+      justify-self: end;
+    }
+    .review-item .review-thread__summary {
+      min-width: 38px;
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      padding: 6px 9px;
+      list-style: none;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .review-item .review-thread__summary::after { content: none; }
+    .review-item .review-thread__summary::-webkit-details-marker { display: none; }
+    .review-item .review-thread__summary.comment-chip--empty {
+      border-color: transparent;
+      background: transparent;
+      color: var(--muted);
+    }
+    .review-item .review-thread[data-comment-count="0"] .comment-chip__count { display: none; }
+    .review-item .review-thread__count { margin-left: 0; }
+    .review-item .review-thread[open] {
+      grid-column: 1 / -1;
+      width: 100%;
+      justify-self: stretch;
+    }
+    .review-item .review-thread[open] .review-thread__summary { display: flex; width: max-content; margin-left: auto; }
+    .review-item .review-thread[open] .thread { width: 100%; }
+
+    .thread__attachment {
+      width: auto;
+      min-width: 66px;
+      padding-inline: 10px;
+      color: var(--muted);
+      font-size: 10.5px;
+      font-weight: 700;
+    }
+    .thread__composer,
+    .cmt-form { grid-template-columns: auto minmax(0, 1fr) auto; }
+
+    /* Tertiary copy must remain readable on light surfaces. */
+    .review-action--clear,
+    .decision-reopen__summary,
+    .review-item__locked-action,
+    .new-item__summary,
+    .field-label,
+    .review-item__note { color: var(--muted); }
+
+    /* Technical report surface, matching the landing's handoff block. */
+    .report-dialog__content[data-report-surface="technical"] {
+      background: var(--ink);
+      color: #E7E7E2;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-variant-ligatures: none;
+    }
+
+    @media (max-width: 760px) {
+      .review-item__aside { padding-top: 0; }
+      .review-item__aside .review-item__badges {
+        display: flex;
+        flex-wrap: wrap;
+        margin-top: 6px;
+      }
+      .review-item__footer {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+      }
+      .review-item__action-row--pending {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) 44px;
+        gap: 7px;
+      }
+      .review-item__action-row--rule {
+        display: grid;
+        grid-template-columns: minmax(112px, 0.48fr);
+      }
+      .review-action,
+      .item-more-menu__trigger,
+      .review-item .review-thread__summary,
+      .decision-reopen__summary {
+        min-height: 44px;
+      }
+      .item-more-menu__trigger,
+      .review-item .review-thread__summary {
+        width: 44px;
+        min-width: 44px;
+      }
+      .decision-reopen { max-width: none; }
+      .decision-reopen__panel {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .decision-reopen__panel .review-action { width: 100%; }
+      .item-more-menu__popover { min-width: 190px; }
+      .review-item .review-thread[open] .review-thread__summary { width: 44px; }
+      .thread__composer,
+      .cmt-form { grid-template-columns: minmax(72px, auto) minmax(0, 1fr); }
+      .thread__attachment { min-height: 42px; }
+      .thread__send { grid-column: 1 / -1; }
+    }
+
+
+    /* Ajustes finais v2 — consistência das ações reabertas. */
+    .review-action--approve:active,
+    .review-action--validate:active {
+      border-color: var(--approved);
+      background: var(--approved);
+      color: #fff;
+    }
+    .review-action--adjust:active {
+      border-color: var(--yellow);
+      background: var(--yellow);
+      color: var(--ink);
+    }
+    @media (max-width: 760px) {
+      .decision-reopen__panel {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) 44px;
+      }
+      .decision-reopen__panel .review-action--clear {
+        grid-column: 1 / -1;
+        width: max-content;
+        min-height: 36px;
+        padding-left: 2px;
+      }
+    }
+
+    /* ── Apêndice do transplante funcional (não altera o visual aprovado) ── */
+    .filter-chip, .review-action, .item-more-menu__trigger, .thread__send,
+    .thread__attachment, .new-item__save, .dialog-action, .footer-admin,
+    .footer-report, .login-dialog__start, .screen-card__toggle { cursor: pointer; }
+    .screen-card__figma {
+      font-size: 10.5px; font-weight: 700; color: var(--ink); white-space: nowrap;
+      text-decoration: underline; text-decoration-color: var(--yellow);
+      text-decoration-thickness: 2px; text-underline-offset: 3px;
+    }
+    .revision-editor__save { min-height: 14px; }
+    .revision-editor__save.is-error { color: var(--role-client); font-weight: 700; }
+    .review-item.is-hidden-admin { opacity: 0.55; }
+    .badge--hidden { background: #666; color: #fff; }
+    .badge--extra { background: var(--yellow-soft); color: #6E5200; }
+    .item-more-menu__action--danger { color: var(--role-client); }
+    .workspace-loading { padding: 40px 0; color: var(--muted); font-size: 13px; }
+    .mover-dialog { width: min(92vw, 420px); }
+    .mover-dialog__body { padding: 16px; }
+    .mover-dialog select {
+      width: 100%; min-height: 44px; padding: 10px 11px;
+      border: 1px solid var(--border); border-radius: 8px;
+      background: var(--surface); color: var(--ink); font-size: 13px;
+    }
+    .cmt-mover {
+      border: 1px solid var(--border); background: var(--surface); border-radius: 6px;
+      font-size: 9.5px; padding: 2px 7px; cursor: pointer; margin-left: 6px;
+    }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-header__top shell">
+    <div aria-label="Crivo" class="brand"><span class="brand__word">crivo</span><span>.</span></div>
+    <div class="project-heading">
+      <h1 class="project-heading__name">PetAgenda</h1>
+      <p class="project-heading__description">app de agendamento para petshops · painel de validação do time</p>
+    </div>
+    <span class="connection-indicator" id="conex">conectando…</span>
+    <div class="project-progress" aria-label="Progresso da revisão">
+      <div class="project-progress__top"><span>progresso</span><strong class="project-progress__count" id="prog">0 / 0</strong></div>
+      <div class="project-progress__track"><span class="project-progress__value" id="barra" style="width:0%"></span></div>
+    </div>
+  </div>
+  <nav aria-label="Filtros do painel" class="filter-bar shell" id="filtros">
+    <button class="filter-chip is-active" data-f="todas" type="button">Todas</button>
+    <button class="filter-chip" data-f="pend" type="button">Pendentes</button>
+    <button class="filter-chip" data-f="ap" type="button">Aprovadas</button>
+    <button class="filter-chip" data-f="aj" type="button">Ajustadas</button>
+    <button class="filter-chip" data-f="gap" type="button">Falta escrever</button>
+    <button class="filter-chip" data-f="impl" type="button">Implementar</button>
+    <button class="filter-chip" data-f="implok" type="button">Implementados</button>
+  </nav>
+</header>
+
+<details class="welcome-guide" id="guia" open>
+  <summary class="welcome-guide__dismiss">Entendi</summary>
+  <div class="shell welcome-guide__inner">
+    <p class="welcome-guide__text"><strong>Como funciona</strong> — leia cada texto ou regra · <span class="guide-approved">✓ aprove</span> ou <span class="guide-adjusted">✎ ajuste</span> (sua versão salva sozinha) · 💬 comente para discutir. Tudo fica assinado com seu nome e papel. No fim, um clique gera o relatório pronto para o dev — ou para a IA — implementar.</p>
+  </div>
+</details>
+
+<main class="workspace" id="app"><p class="workspace-loading">Carregando painel…</p></main>
+
+<footer class="app-footer">
+  <div class="app-footer__inner">
+    <div aria-label="Contadores da revisão" class="footer-stats">
+      <span class="footer-stat footer-stat--approved"><strong id="nAp">0</strong> aprovados</span>
+      <span class="footer-stat footer-stat--adjusted"><strong id="nAj">0</strong> ajustados</span>
+      <span class="footer-stat"><strong id="nPe">0</strong> pendentes</span>
+    </div>
+    <button class="footer-reviewer" id="quem" type="button"><span class="footer-reviewer__prefix">revisando como: </span><strong id="quemNome">—</strong></button>
+    <span class="footer-spacer"></span>
+    <button aria-label="Chave de administrador" class="footer-admin" id="btnAdmin" title="Chave de administrador" type="button">🔑</button>
+    <div class="footer-reports">
+      <button class="footer-report" onclick="exportar('decisoes')" type="button">Decisões</button>
+      <button class="footer-report footer-report--design" onclick="exportar('design')" type="button">Design</button>
+      <button class="footer-report footer-report--ia" onclick="exportar('ia')" type="button">Relatório p/ IA</button>
+    </div>
+  </div>
+</footer>
+
+<dialog aria-labelledby="login-title" class="app-dialog login-dialog" id="login-dialog">
+  <div class="login-dialog__body">
+    <div aria-hidden="true" class="brand"><span class="brand__word">crivo</span><span>.</span></div>
+    <h2 id="login-title">Quem está revisando?</h2>
+    <p>Cada decisão e comentário sai assinado com seu nome e papel. É assim que o time inteiro sabe quem validou o quê.</p>
+    <label class="login-dialog__field"><span>Nome</span><input id="loginNome" maxlength="30" placeholder="Seu nome" type="text"></label>
+    <label class="login-dialog__field"><span>Papel</span><select id="loginPapel"><option value="Produto">Produto</option><option value="Design">Design</option><option value="Dev">Dev</option><option value="Cliente">Cliente</option></select></label>
+    <button class="login-dialog__start" onclick="entrar()" type="button">Começar a revisar</button>
+  </div>
+</dialog>
+
+<dialog class="app-dialog report-dialog" id="dlg">
+  <div class="dialog__header">
+    <h2 id="dlgT">Relatório</h2>
+    <button aria-label="Fechar" class="dialog__close" data-dialog-close type="button">×</button>
+  </div>
+  <pre class="report-dialog__content" data-report-surface="technical" id="dlgPre"></pre>
+  <div class="dialog__footer">
+    <button class="dialog-action dialog-action--secondary" onclick="baixarTxt()" type="button">Baixar .md</button>
+    <button class="dialog-action dialog-action--primary" onclick="copiarTxt()" type="button">Copiar tudo</button>
+  </div>
+</dialog>
+
+<dialog class="app-dialog mover-dialog" id="mover">
+  <div class="dialog__header">
+    <h2>➜ Mover comentário para uma tela</h2>
+    <button aria-label="Fechar" class="dialog__close" data-dialog-close type="button">×</button>
+  </div>
+  <div class="mover-dialog__body">
+    <select id="moverSel"></select>
+    <div class="dialog__footer" style="border-top:0;padding:12px 0 0">
+      <button class="dialog-action dialog-action--secondary" id="moverX" type="button">Cancelar</button>
+      <button class="dialog-action dialog-action--primary" id="moverOk" type="button">Mover</button>
+    </div>
+  </div>
+</dialog>
+
+<script type="module">
+/* ═══ CONEXÃO ═══
+   Trocar os placeholders pelas credenciais do Supabase DO CLIENTE.
+   Enquanto forem placeholders, o painel roda em MODO DEMONSTRAÇÃO. */
+const SB_URL = "{{SUPABASE_URL}}";
+const SB_KEY = "{{SUPABASE_KEY}}";
+const DEMO = SB_URL.indexOf("{{") === 0;
+let sb = null;
+async function conectar(){
+  if(DEMO) return;
+  const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
+  sb = createClient(SB_URL, SB_KEY);
+}
+
+const PROJETO = "PetAgenda";
+// Card de entrada de comentários sincronizados do Figma (opcional): "TELA|fluxo|tela"
+const INBOX_ID = null;
+
+/* ═══ DADOS DEMO — app de agendamento para petshops ═══
+   tipo: "" copy | "jur" travada | "gap" falta escrever | "prop" proposta | "tar" tarefa/regra */
+const DATA = [
+{fluxo:"Fluxo 1 — Onboarding", desc:"Do primeiro acesso ao petshop pronto para agendar. Primeira impressão do produto.", telas:[
+ {id:"ON-01", nome:"Boas-vindas", itens:[
+   ["Título","Seu petshop, sem caderno de agendamento.",""],
+   ["Subtítulo","Agenda, lembretes e cobrança num lugar só — no celular que você já usa.",""],
+   ["CTA principal","Criar conta grátis",""],
+   ["Texto de apoio","Leva 3 minutos. Não precisa de cartão.","prop","Proposta do time: reforço de baixa fricção logo abaixo do CTA."]]},
+ {id:"ON-02", nome:"Cadastro do petshop", itens:[
+   ["Título","Conta pra gente do seu petshop",""],
+   ["Campo nome","Nome do petshop — placeholder: Ex.: Banho & Cia",""],
+   ["Campo WhatsApp","WhatsApp do petshop — placeholder: (21) 99999-9999","","É por esse número que os lembretes saem para os clientes."],
+   ["Aviso sob o campo","(o que dizemos sobre o uso do WhatsApp?)","gap","O QUE É: frase curta abaixo do campo explicando que o número será usado para enviar lembretes aos clientes. Sugestão de partida: “Seus clientes recebem os lembretes por esse número.”"],
+   ["CTA","Começar a agendar",""]]}
+]},
+{fluxo:"Fluxo 2 — Agenda", desc:"O dia a dia do balcão: ver o dia, encaixar horário, confirmar chegada.", telas:[
+ {id:"AG-01", nome:"Agenda do dia", itens:[
+   ["Saudação","Hoje você tem {n} atendimentos.",""],
+   ["Card de horário","{hora} · {pet} ({raça}) · {serviço} — tutor: {cliente}",""],
+   ["Ação no card","Confirmar chegada",""],
+   ["Estado vazio","(o que aparece num dia sem nenhum agendamento?)","gap","O QUE É: a tela do dia sem atendimentos — não pode parecer erro nem dia morto. Sugestão: “Dia livre por enquanto. Toque em + para encaixar um horário.”"]]},
+ {id:"AG-02", nome:"Novo agendamento", itens:[
+   ["Título","Novo agendamento",""],
+   ["Campo serviço","Serviço — Banho · Tosa · Banho + tosa · Hidratação",""],
+   ["Campo horário","Escolha o horário — mostra apenas horários livres",""],
+   ["Aviso de lembrete","O cliente recebe um lembrete no WhatsApp um dia antes.","prop","No mockup está “Enviaremos notificação ao usuário”. Proposta em linguagem de balcão."],
+   ["CTA","Agendar",""]]}
+]},
+{fluxo:"Fluxo 3 — Pagamento", desc:"Cobrança sem constrangimento: Pix na hora, recibo automático.", telas:[
+ {id:"PG-01", nome:"Cobrança", itens:[
+   ["Título","Receba na hora",""],
+   ["Instrução Pix","Mostre o QR Code para o cliente ou envie o link de pagamento pelo WhatsApp.",""],
+   ["Confirmação","Pagamento recebido ✓ — recibo enviado para o cliente.",""],
+   ["Erro de pagamento","(o que dizer quando o Pix não confirma?)","gap","O QUE É: mensagem quando o pagamento não confirma em até 2 minutos. Precisa acalmar e dar saída, sem culpar o cliente. Sugestão: “Ainda não confirmou. Peça para o cliente conferir o app do banco — ou gere um novo código.”"],
+   ["Texto do recibo","Recibo — {serviço} para {pet}, em {data}. Pago via Pix. Obrigado pela confiança!","jur","Fechada com o cliente em reunião — alteração só com novo aceite."]]}
+]},
+{fluxo:"Design e regras", desc:"O que não é copy, mas o time inteiro precisa validar: tokens visuais e regras de negócio.", telas:[
+ {id:"TOKENS", nome:"Tokens de design", itens:[
+   ["--cor-primaria","#1E6091 — botões principais e links",""],
+   ["--cor-alerta","#E8590C — atrasos e cancelamentos",""],
+   ["--raio-card","12px — cards e modais",""],
+   ["--fonte-titulo","Sora, peso 700 — títulos de tela",""],
+   ["--espaco-base","8px — todo espaçamento em múltiplos de 8",""]]},
+ {id:"REGRAS", nome:"Regras de negócio", itens:[
+   ["Cancelamento","Cliente pode cancelar até 2h antes sem custo. Depois disso, cobrar 50% do serviço.","tar"],
+   ["No-show","Cliente que falta 2 vezes no mês só volta a agendar com pagamento antecipado.","tar"],
+   ["Encaixe","Horário vago no mesmo dia pode ser ocupado por encaixe — sem lembrete de véspera, só confirmação imediata.","tar"],
+   ["Lembrete","Lembrete no WhatsApp 24h antes; segunda tentativa 2h antes se não houver confirmação.","tar"]]}
+]}
+];
+
+/* ═══ identidade ═══ */
+let revisor = localStorage.getItem("crivo_nome") || "";
+let papel = localStorage.getItem("crivo_papel") || "";
+function marcarQuem(){
+  document.getElementById("quemNome").textContent = revisor ? `${revisor} (${papel})` : "—";
+}
+window.entrar = function(){
+  const n = document.getElementById("loginNome").value.trim();
+  if(!n){ document.getElementById("loginNome").focus(); return; }
+  const primeira = !revisor;
+  revisor = n; papel = document.getElementById("loginPapel").value;
+  localStorage.setItem("crivo_nome", revisor);
+  localStorage.setItem("crivo_papel", papel);
+  document.getElementById("login-dialog").close();
+  marcarQuem();
+  if(primeira){ iniciar(); } else { render(); }
+};
+document.getElementById("quem").onclick = ()=>{
+  document.getElementById("loginNome").value = revisor;
+  document.getElementById("loginPapel").value = papel || "Produto";
+  document.getElementById("login-dialog").showModal();
+};
+
+/* ═══ estado ═══ */
+let estado = {};      // item_id -> {st, novo, revisor, papel, impl, implPor, implEm}
+let cmts = {};        // item_id -> [{id,autor,papel,texto,hora,fotos}]
+let extras = {};      // card_key "fi|ti" -> [itens criados no painel]
+let ocultos = new Set();
+let adminToken = localStorage.getItem("crivo_admin") || "";
+let isAdmin = false;
+let demoSeeded = false;
+async function adminAcao(acao, alvo){
+  if(DEMO) return adminToken === "crivo";
+  const { data } = await sb.rpc("admin_acao", {p_acao:acao, p_alvo:alvo||"", p_token:adminToken});
+  return data === true;
+}
+let filtroAtivo = "todas";
+let filtroTexto = "";
+const app = document.getElementById("app");
+const timers = {};
+
+function uid(f,t,i){ return f+"|"+t+"|"+i; }
+function escapeHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function roleCls(p){ return "role-"+String(p||"produto").toLowerCase(); }
+window.escapeHtml = escapeHtml;
+
+/* Dados fictícios pré-carregados no modo demonstração */
+function seedDemo(){
+  const s = (f,t,i,o)=>{ estado[uid(f,t,i)] = o; };
+  s(0,0,0,{st:"ap",novo:"",revisor:"Marina",papel:"Produto"});
+  s(0,0,1,{st:"ap",novo:"",revisor:"Rafa",papel:"Design"});
+  s(1,1,3,{st:"aj",novo:"A gente avisa seu cliente no WhatsApp um dia antes. Menos falta, mais banho.",revisor:"Paula",papel:"Cliente"});
+  s(3,0,0,{st:"ap",novo:"",revisor:"Rafa",papel:"Design"});
+  s(3,1,0,{st:"ap",novo:"",revisor:"Caio",papel:"Dev",impl:true});
+  s(3,1,1,{st:"ap",novo:"",revisor:"Caio",papel:"Dev",impl:true,implPor:"Caio",implEm:"2026-08-10T12:00:00"});
+  cmts[uid(1,0,3)] = [
+    {id:"d1",autor:"Paula",papel:"Cliente",texto:"No balcão a gente fala “dia livre” mesmo — aprovo a sugestão.",hora:"2026-08-10T14:12:00",fotos:[]},
+    {id:"d2",autor:"Caio",papel:"Dev",texto:"Fácil de implementar, o componente de estado vazio já existe.",hora:"2026-08-10T14:20:00",fotos:[]}
+  ];
+  cmts[uid(2,0,3)] = [
+    {id:"d3",autor:"Marina",papel:"Produto",texto:"Importante não culpar o cliente pelo Pix que falhou. A sugestão resolve.",hora:"2026-08-10T15:02:00",fotos:[]}
+  ];
+}
+
+function setConex(modo){
+  const c = document.getElementById("conex");
+  c.classList.remove("connection-indicator--live","connection-indicator--demo");
+  if(modo==="demo"){ c.classList.add("connection-indicator--demo"); c.textContent = "modo demonstração"; }
+  else if(modo==="live"){ c.classList.add("connection-indicator--live"); c.textContent = "● ao vivo"; }
+  else { c.textContent = modo; }
+}
+
+async function carregar(){
+  if(DEMO){
+    setConex("demo");
+    if(!demoSeeded){ seedDemo(); demoSeeded = true; }
+    render();
+    return;
+  }
+  const [r1, r2, r3, r4] = await Promise.all([
+    sb.from("revisao_copy").select("*"),
+    sb.from("comentarios").select("*").order("created_at",{ascending:true}),
+    sb.from("itens_extras").select("*").eq("arquivado", false).order("created_at",{ascending:true}),
+    sb.from("itens_ocultos").select("item_id")
+  ]);
+  if(r1.error||r2.error||r3.error||r4.error){ setConex("erro de conexão"); return; }
+  estado = {}; cmts = {}; extras = {}; ocultos = new Set();
+  r1.data.forEach(r=>{ if(r.status||r.novo_texto||r.implementar) estado[r.item_id] = {st:r.status, novo:r.novo_texto||"", revisor:r.revisor||"", papel:r.obs||"", impl:r.implementar===true, implPor:r.implementado_por||"", implEm:r.implementado_em||null}; });
+  r2.data.forEach(c=>{ (cmts[c.item_id]=cmts[c.item_id]||[]).push({id:c.id,autor:c.autor,papel:c.papel,texto:c.texto,hora:c.created_at,fotos:c.fotos||[]}); });
+  r3.data.forEach(x=>{ (extras[x.card_key]=extras[x.card_key]||[]).push(x); });
+  r4.data.forEach(o=>ocultos.add(o.item_id));
+  if(adminToken && !isAdmin){ isAdmin = await adminAcao("validar"); atualizarBotaoAdmin(); }
+  render();
+}
+async function salvarExtra(cardKey, rotulo, texto, tipo){
+  if(!rotulo.trim() || !texto.trim()) return false;
+  if(DEMO){
+    (extras[cardKey]=extras[cardKey]||[]).push({id:"dx"+Date.now(), card_key:cardKey, rotulo:rotulo.trim(), texto:texto.trim(), tipo, autor:revisor, papel});
+    return true;
+  }
+  const { error } = await sb.from("itens_extras").insert({card_key:cardKey, rotulo:rotulo.trim(), texto:texto.trim(), tipo, autor:revisor, papel});
+  return !error;
+}
+async function arquivarExtra(id){
+  const ok = await adminAcao("arquivar", String(id));
+  if(!ok){ alert("Ação restrita ao administrador do painel."); return; }
+  if(DEMO){
+    for(const lista of Object.values(extras)){
+      const i = lista.findIndex(e=>String(e.id)===String(id));
+      if(i>=0){ lista.splice(i,1); break; }
+    }
+    render();
+  }
+}
+function setSave(id, txt, erro){
+  document.querySelectorAll(`[data-save="${CSS.escape(id)}"]`).forEach(s=>{
+    s.textContent = txt;
+    s.classList.toggle("is-error", !!erro);
+  });
+}
+async function gravarAgora(id){
+  if(DEMO){ setSave(id, "✓ salvo (demonstração — sem banco conectado)"); return; }
+  const e = estado[id] || {};
+  const { error } = await sb.from("revisao_copy").upsert({ item_id:id, status:e.st||"", novo_texto:e.novo||"", obs:e.papel||papel, revisor:e.revisor||revisor, implementar:e.impl===true, implementado_por:e.implPor||"", implementado_em:e.implEm||null, updated_at:new Date().toISOString() });
+  if(error){ setSave(id, "⚠ NÃO SALVOU — verifique a conexão e digite de novo", true); console.error(error); }
+  else { setSave(id, "✓ salvo às " + new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})); }
+}
+function gravar(id){
+  setSave(id, "· salvando…");
+  clearTimeout(timers[id]);
+  timers[id] = setTimeout(()=>gravarAgora(id), 350);
+}
+function statsCard(fi,ti){
+  let done=0, total=0;
+  DATA[fi].telas[ti].itens.forEach((it,ii)=>{
+    const id = uid(fi,ti,ii);
+    if(ocultos.has(id)) return;
+    total++;
+    if(estado[id]?.st) done++;
+  });
+  (extras[fi+"|"+ti]||[]).forEach(x=>{ total++; if(estado["X|"+x.id]?.st) done++; });
+  return {done, total};
+}
+async function limpar(id){
+  delete estado[id];
+  if(DEMO) return;
+  await sb.from("revisao_copy").upsert({item_id:id, status:"", novo_texto:"", obs:"", revisor:"", implementar:false, implementado_por:"", implementado_em:null, updated_at:new Date().toISOString()});
+}
+
+/* ═══ realtime ═══ */
+function assinar(){
+  if(DEMO) return;
+  sb.channel("revisao")
+    .on("postgres_changes", {event:"*", schema:"public", table:"revisao_copy"}, (p)=>{
+      const r = p.new; if(!r) return;
+      const meu = document.activeElement?.closest?.(`[data-uid="${CSS.escape(r.item_id)}"]`);
+      if(!r.status && !r.novo_texto && !r.implementar){ delete estado[r.item_id]; }
+      else { estado[r.item_id] = {st:r.status, novo:r.novo_texto||"", revisor:r.revisor||"", papel:r.obs||"", impl:r.implementar===true, implPor:r.implementado_por||"", implEm:r.implementado_em||null}; }
+      if(!meu){ if(r.item_id.startsWith("X|")) render(); else refreshUid(r.item_id); }
+      atualizarContadores();
+    })
+    .on("postgres_changes", {event:"*", schema:"public", table:"itens_ocultos"}, (p)=>{
+      if(p.eventType==="DELETE"){ if(p.old?.item_id) ocultos.delete(p.old.item_id); }
+      else if(p.new?.item_id){ ocultos.add(p.new.item_id); }
+      render();
+    })
+    .on("postgres_changes", {event:"*", schema:"public", table:"itens_extras"}, (p)=>{
+      const x = p.new; if(!x) return;
+      const lista = extras[x.card_key] = extras[x.card_key] || [];
+      const i = lista.findIndex(e=>e.id===x.id);
+      if(x.arquivado){ if(i>=0) lista.splice(i,1); }
+      else if(i>=0){ lista[i]=x; } else { lista.push(x); }
+      render();
+    })
+    .on("postgres_changes", {event:"*", schema:"public", table:"comentarios"}, (p)=>{
+      const c = p.new; if(!c) return;
+      if(p.eventType === "UPDATE"){
+        for(const lista of Object.values(cmts)){
+          const i = lista.findIndex(x=>String(x.id)===String(c.id));
+          if(i>=0){ lista.splice(i,1); break; }
+        }
+        (cmts[c.item_id]=cmts[c.item_id]||[]).push({id:c.id,autor:c.autor,papel:c.papel,texto:c.texto,hora:c.created_at,fotos:c.fotos||[]});
+        cmts[c.item_id].sort((a,b)=>String(a.hora).localeCompare(String(b.hora)));
+        render();
+        return;
+      }
+      (cmts[c.item_id]=cmts[c.item_id]||[]).push({id:c.id,autor:c.autor,papel:c.papel,texto:c.texto,hora:c.created_at,fotos:c.fotos||[]});
+      const box = document.querySelector(`[data-th="${CSS.escape(c.item_id)}"]`);
+      if(box){ box.insertAdjacentHTML("beforeend", cmtHtml(c, c.item_id===INBOX_ID)); }
+      atualizarCmtCount(c.item_id);
+    })
+    .subscribe((st)=>{
+      if(st==="SUBSCRIBED"){ setConex("live"); }
+      else { setConex("reconectando…"); }
+    });
+}
+const FOTO_URL = DEMO ? "" : SB_URL + "/storage/v1/object/public/fotos-painel/";
+function cmtHtml(c, mov){
+  const h = new Date(c.hora||Date.now()).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+  const fotos = (c.fotos||[]).map(p=>`<a href="${FOTO_URL}${p}" target="_blank" rel="noopener"><img src="${FOTO_URL}${p}" loading="lazy" alt="foto anexada"></a>`).join("");
+  const autorHtml = (isAdmin && c.id)
+    ? `<b class="${roleCls(c.papel)} cmt-autor" data-cid="${c.id}" title="Admin: tocar para renomear" style="cursor:pointer;text-decoration:underline dotted">${escapeHtml(c.autor)}</b>`
+    : `<b class="${roleCls(c.papel)}">${escapeHtml(c.autor)}</b>`;
+  const btnMov = (mov && c.id) ? ` <button class="cmt-mover" data-cid="${c.id}" type="button">➜ mover para tela</button>` : "";
+  return `<div class="cmt">${autorHtml}<span class="hora">${c.papel||""} · ${h}</span>${btnMov}${c.texto?`<br>${escapeHtml(c.texto)}`:""}${fotos?`<div class="cmt-fotos">${fotos}</div>`:""}</div>`;
+}
+function threadInner(id){
+  const mov = (id === INBOX_ID);
+  const lista = (cmts[id]||[]).map(c=>cmtHtml(c, mov)).join("");
+  return `<div class="thread" data-thread-container="${escapeHtml(id)}">
+    <div class="thread__comments" data-th="${escapeHtml(id)}">${lista}</div>
+    <div aria-label="Campo de envio de comentário" class="thread__composer cmt-form" role="group">
+      <button aria-label="Anexar imagem" class="thread__attachment cmt-foto" title="Anexar imagem" type="button">Anexar</button>
+      <input accept="image/*" class="thread__file cmt-file" hidden multiple type="file">
+      <input class="thread__input cmt-txt" maxlength="500" placeholder="Comentar… (assinado como ${escapeHtml(revisor)})" type="text">
+      <button class="thread__send cmt-send" type="button">Enviar</button>
+    </div>
+    <div class="thread__preview cmt-prev"></div>
+  </div>`;
+}
+function threadItemHtml(id){
+  const n = (cmts[id]||[]).length;
+  return `<details class="review-thread" data-comment-count="${n}" data-thread-id="${escapeHtml(id)}">
+    <summary aria-label="Abrir conversa" class="review-thread__summary comment-chip ${n?"":"comment-chip--empty"}" title="Abrir conversa"><span aria-hidden="true" class="comment-chip__icon">💬</span><span class="review-thread__count comment-chip__count" data-thc="${escapeHtml(id)}">${n}</span></summary>
+    ${threadInner(id)}
+  </details>`;
+}
+function atualizarCmtCount(id){
+  const n = (cmts[id]||[]).length;
+  const det = document.querySelector(`details[data-thread-id="${CSS.escape(id)}"]`);
+  if(det){
+    det.dataset.commentCount = n;
+    const chip = det.querySelector(".comment-chip");
+    if(chip) chip.classList.toggle("comment-chip--empty", n===0);
+  }
+  const cnt = document.querySelector(`[data-thc="${CSS.escape(id)}"]`);
+  if(cnt) cnt.textContent = cnt.classList.contains("comment-chip__count") ? n : `${n} comentários`;
+  if(id.startsWith("TELA|")){
+    const [,fi,ti] = id.split("|");
+    const card = document.querySelector(`.screen-card[data-key="${fi}-${ti}"] .screen-card__comments`);
+    if(card) card.textContent = `💬 ${n} comentários`;
+  }
+}
+function ligarThread(container, id){
+  const inp = container.querySelector(".cmt-txt");
+  const btn = container.querySelector(".cmt-send");
+  const fbtn = container.querySelector(".cmt-foto");
+  const file = container.querySelector(".cmt-file");
+  const prev = container.querySelector(".cmt-prev");
+  if(!inp || !btn) return;
+  let fotos = [];
+  const renderPrev = ()=>{
+    prev.innerHTML = fotos.map((f,i)=>`<span class="pv">📷 ${escapeHtml(f.name.length>22? f.name.slice(0,20)+"…" : f.name)}<b data-i="${i}" style="cursor:pointer;margin-left:4px;color:var(--role-client)">✕</b></span>`).join("");
+    prev.querySelectorAll("b").forEach(b=>b.onclick=()=>{ fotos.splice(+b.dataset.i,1); renderPrev(); });
+  };
+  fbtn.onclick = ()=>{
+    if(DEMO){ alert("No modo demonstração, anexos ficam de fora. Conecte o banco do cliente para usar fotos."); return; }
+    file.click();
+  };
+  file.onchange = ()=>{
+    for(const f of file.files){
+      if(f.size > 5*1024*1024){ alert(`“${f.name}” passa de 5 MB — tire um print em vez de foto da câmera, ou reduza a imagem.`); continue; }
+      fotos.push(f);
+    }
+    file.value=""; renderPrev();
+  };
+  const enviar = async ()=>{
+    const texto = inp.value;
+    if(!texto.trim() && !fotos.length) return;
+    if(DEMO){
+      const c = {id:"d"+Date.now(), autor:revisor, papel, texto:texto.trim(), hora:new Date().toISOString(), fotos:[]};
+      (cmts[id]=cmts[id]||[]).push(c);
+      const box = container.querySelector(`[data-th="${CSS.escape(id)}"]`);
+      if(box) box.insertAdjacentHTML("beforeend", cmtHtml(c, false));
+      atualizarCmtCount(id);
+      inp.value = "";
+      return;
+    }
+    btn.disabled = true; if(fotos.length) btn.textContent = "Enviando…";
+    try{
+      const paths = [];
+      for(const f of fotos){
+        const ext = (f.name.split(".").pop()||"png").toLowerCase().replace(/[^a-z0-9]/g,"") || "png";
+        const path = crypto.randomUUID()+"."+ext;
+        const { error } = await sb.storage.from("fotos-painel").upload(path, f, {contentType: f.type||"image/png"});
+        if(error) throw error;
+        paths.push(path);
+      }
+      const { error } = await sb.from("comentarios").insert({item_id:id, autor:revisor, papel, texto:texto.trim(), fotos:paths});
+      if(error) throw error;
+      inp.value=""; fotos=[]; renderPrev();
+    }catch(e){ alert("Não consegui enviar. Verifique a conexão e tente de novo."); console.error(e); }
+    btn.disabled = false; btn.textContent = "Enviar";
+  };
+  btn.onclick = enviar;
+  inp.onkeydown = (e)=>{ if(e.key==="Enter") enviar(); };
+}
+
+/* ═══ render ═══ */
+function passaFiltro(id,it){
+  const st = estado[id]?.st || "";
+  const tipo = it[2]||"";
+  if(filtroAtivo==="todas") return true;
+  if(filtroAtivo==="pend") return !st && tipo!=="jur";
+  if(filtroAtivo==="ap") return st==="ap";
+  if(filtroAtivo==="aj") return st==="aj";
+  if(filtroAtivo==="gap") return tipo==="gap";
+  if(filtroAtivo==="impl") return estado[id]?.impl===true && !estado[id]?.implPor;
+  if(filtroAtivo==="implok") return estado[id]?.impl===true && !!estado[id]?.implPor;
+  return true;
+}
+function tituloFluxo(nome){
+  const p = nome.split(" — ");
+  if(p.length > 1) return `<span class="flow__mark">${escapeHtml(p[0])}</span> — ${escapeHtml(p.slice(1).join(" — "))}`;
+  return `<span class="flow__mark">${escapeHtml(nome)}</span>`;
+}
+function render(){
+  const abertas = new Set(Array.from(document.querySelectorAll(".screen-card.is-open")).map(c=>c.dataset.key));
+  const threadsAbertas = new Set(Array.from(document.querySelectorAll("details.review-thread[open]")).map(d=>d.dataset.threadId));
+  app.innerHTML = "";
+  DATA.forEach((fl,fi)=>{
+    const sec = document.createElement("section"); sec.className="flow-section";
+    sec.innerHTML = `<header class="flow__header"><h2 class="flow__title">${tituloFluxo(fl.fluxo)}</h2><p class="flow__description">${escapeHtml(fl.desc)}</p></header>`;
+    const screens = document.createElement("div"); screens.className="flow__screens";
+    fl.telas.forEach((tela,ti)=>{
+      const q = filtroTexto.trim().toLowerCase();
+      const cardMatch = !!q && (tela.id+" "+tela.nome).toLowerCase().includes(q);
+      const bate = (rot,txt)=> !q || cardMatch || ((rot||"")+" "+(txt||"")).toLowerCase().includes(q);
+      let rendered = 0;
+      const baseVis = tela.itens.map((it,ii)=>({it,ii})).filter(({ii})=> isAdmin || !ocultos.has(uid(fi,ti,ii)));
+      const visiveis = baseVis.filter(({it,ii})=>passaFiltro(uid(fi,ti,ii),it));
+      const listaEx = extras[fi+"|"+ti]||[];
+      const exPassa = listaEx.filter(ex=>{
+        const eX = estado["X|"+ex.id]; const stX = eX?.st || "";
+        if(filtroAtivo==="pend") return !stX;
+        if(filtroAtivo==="ap") return stX==="ap";
+        if(filtroAtivo==="aj") return stX==="aj";
+        if(filtroAtivo==="gap") return ex.tipo==="gap";
+        if(filtroAtivo==="impl") return eX?.impl===true && !eX?.implPor;
+        if(filtroAtivo==="implok") return eX?.impl===true && !!eX?.implPor;
+        return true;
+      });
+      if(filtroAtivo!=="todas" && !visiveis.length && !exPassa.length && !q) return;
+      if(filtroAtivo==="todas" && !q && !baseVis.length && !listaEx.length) return;
+
+      const key = fi+"-"+ti;
+      const aberto = filtroAtivo!=="todas" || q || abertas.has(key);
+      const s = statsCard(fi,ti);
+      const idTela = "TELA|"+fi+"|"+ti;
+      const nCmts = (cmts[idTela]||[]).length;
+
+      const card = document.createElement("article");
+      card.className = "screen-card"+(aberto?" is-open":"");
+      card.dataset.key = key;
+      card.dataset.screenCard = key;
+
+      const toggle = document.createElement("button");
+      toggle.type = "button"; toggle.className = "screen-card__toggle";
+      toggle.setAttribute("data-screen-toggle","");
+      toggle.setAttribute("aria-expanded", String(aberto));
+      toggle.innerHTML = `<span class="screen-card__code">${escapeHtml(tela.id)}</span>
+        <span class="screen-card__name">${escapeHtml(tela.nome)}${tela.link?` <span class="screen-card__figma" data-href="${escapeHtml(tela.link)}">Abrir no Figma ↗</span>`:""}</span>
+        <span class="screen-card__meta"><span class="screen-card__comments">💬 ${nCmts} comentários</span><span class="screen-card__progress">${s.done}/${s.total}</span></span>
+        <span aria-hidden="true" class="screen-card__chevron">⌄</span>`;
+      card.appendChild(toggle);
+
+      const body = document.createElement("div"); body.className = "screen-card__body";
+      const conv = document.createElement("div"); conv.className = "screen-card__conversation";
+      conv.innerHTML = `<details class="review-thread review-thread--screen" data-thread-id="${escapeHtml(idTela)}" ${threadsAbertas.has(idTela)?"open":""}>
+        <summary class="review-thread__summary"><span class="review-thread__label">💬 Conversa da tela</span><span class="review-thread__count" data-thc="${escapeHtml(idTela)}">${nCmts} comentários</span></summary>
+        ${threadInner(idTela)}</details>`;
+      ligarThread(conv, idTela);
+      body.appendChild(conv);
+
+      const itensBox = document.createElement("div"); itensBox.className = "screen-card__items";
+      (filtroAtivo==="todas" ? baseVis : visiveis).forEach(({it,ii})=>{
+        if(!bate(it[0], it[1])) return;
+        rendered++;
+        itensBox.appendChild(renderItem(fi,ti,ii,it,null,threadsAbertas));
+      });
+      exPassa.forEach(ex=>{
+        if(!bate(ex.rotulo, ex.texto)) return;
+        rendered++;
+        itensBox.appendChild(renderItem(fi,ti,null,[ex.rotulo, ex.texto, ex.tipo, "Adicionado por "+ex.autor+(ex.papel?" ("+ex.papel+")":"")], ex, threadsAbertas));
+      });
+      if(q && !rendered && !cardMatch) return;
+      itensBox.appendChild(formExtra(fi,ti));
+      body.appendChild(itensBox);
+      card.appendChild(body);
+      screens.appendChild(card);
+    });
+    sec.appendChild(screens);
+    if(screens.querySelector(".screen-card")) app.appendChild(sec);
+  });
+  atualizarContadores();
+}
+function menuHtml(entries, rule){
+  const acts = entries.filter(Boolean).map(e=>`<button class="item-more-menu__action${e.danger?" item-more-menu__action--danger":""}" data-action="${e.a}" type="button">${e.t}</button>`).join("");
+  if(!acts) return "";
+  return `<details class="item-more-menu${rule?" item-more-menu--rule":""}"><summary aria-label="Mais ações" class="item-more-menu__trigger" title="Mais ações">⋯</summary><div class="item-more-menu__popover">${acts}</div></details>`;
+}
+function renderItem(fi,ti,ii,it,ex,threadsAbertas){
+  const id = ex ? "X|"+ex.id : uid(fi,ti,ii);
+  const [el, txt, tipo, nota] = it;
+  const e = estado[id] || {};
+  const isRule = tipo==="tar";
+  const decidido = !!e.st;
+  const stateCls = tipo==="jur" ? "locked"
+    : e.st==="ap" ? "approved"
+    : e.st==="aj" ? "adjusted"
+    : tipo==="gap" ? "missing"
+    : tipo==="prop" ? "proposal"
+    : "pending";
+
+  const div = document.createElement("section");
+  div.dataset.uid = id;
+  div.className = `review-item review-item--${stateCls}`
+    + (isRule ? " review-item--task" : "")
+    + (e.impl && !e.implPor ? " review-item--implementation-queued" : "")
+    + (e.impl && e.implPor ? " review-item--implementation-done" : "")
+    + (!ex && ocultos.has(id) ? " is-hidden-admin" : "");
+
+  let badges = "";
+  if(!ex && ocultos.has(id)) badges += `<span class="badge badge--hidden">Oculto pelo admin</span>`;
+  if(ex) badges += `<span class="badge badge--extra">Criado no painel</span>`;
+  if(tipo==="jur") badges += `<span class="badge badge--locked">🔒 Travada — decisão fechada</span>`;
+  if(tipo==="gap") badges += `<span class="badge badge--missing">Falta escrever</span>`;
+  if(tipo==="prop") badges += `<span class="badge badge--proposal">Proposta — aprovar ou editar</span>`;
+  if(e.st && e.revisor){
+    const acao = isRule ? "validada" : (e.st==="ap"?"aprovada":"ajustada");
+    badges += `<span class="badge badge--signature badge--signature-${e.st==="ap"?"approved":"adjusted"}">${acao} por <span class="${roleCls(e.papel)}">${escapeHtml(e.revisor)}</span></span>`;
+  }
+  if(e.impl && !e.implPor) badges += `<span class="badge badge--implementation">A implementar</span>`;
+  if(e.impl && e.implPor) badges += `<span class="badge badge--implemented">Implementado por ${escapeHtml(e.implPor)}${e.implEm?` em ${new Date(e.implEm).toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}`:""}</span>`;
+
+  const editor = (!isRule && tipo!=="jur" && e.st==="aj")
+    ? `<div class="revision-editor">
+        <label class="revision-editor__label">✏️ Nova versão — salva sozinha e o item conta como Ajustado. Não clique em Aprovar: isso descartaria este texto.</label>
+        <textarea class="revision-editor__textarea" rows="3" placeholder="${tipo==="gap"?"Escreva aqui o texto proposto…":"Escreva aqui a nova versão…"}">${escapeHtml(e.novo||"")}</textarea>
+        <span class="revision-editor__save save-ind" data-save="${escapeHtml(id)}"></span>
+      </div>` : "";
+
+  const admin = [];
+  if(isAdmin && !ex) admin.push(ocultos.has(id) ? {a:"admin-show",t:"↩ Reexibir item"} : {a:"admin-hide",t:"Ocultar item",danger:true});
+  if(isAdmin && ex) admin.push({a:"admin-archive",t:"Arquivar item",danger:true});
+
+  let acoes = "";
+  if(tipo==="jur"){
+    acoes = `<span class="review-item__locked-action">🔒 não editável</span>${isAdmin?menuHtml(admin,false):""}`;
+  } else if(isRule){
+    if(!decidido){
+      const menu = menuHtml([ e.impl && !e.implPor ? {a:"unqueue",t:"Remover da fila"} : null, ...admin ], true);
+      acoes = `<div class="review-item__action-row review-item__action-row--rule"><button class="review-action review-action--validate" data-action="validate" type="button">Validar</button>${menu}</div>`;
+    } else {
+      const entries = [];
+      if(e.impl && e.implPor){ entries.push({a:"undo-complete",t:"Desfazer baixa"}); }
+      else if(e.impl){ entries.push({a:"complete",t:"Dar baixa"}, {a:"unqueue",t:"Remover da fila"}); }
+      else { entries.push({a:"implement",t:"Implementar"}); }
+      entries.push({a:"clear",t:"Reabrir validação"}, ...admin);
+      acoes = menuHtml(entries, true);
+    }
+  } else if(!decidido){
+    const menu = menuHtml([
+      e.impl && !e.implPor ? {a:"unqueue",t:"Remover da fila"} : {a:"implement",t:"Implementar"},
+      e.impl && !e.implPor ? {a:"complete",t:"Dar baixa"} : null,
+      ...admin
+    ], false);
+    acoes = `<div class="review-item__action-row review-item__action-row--pending"><button class="review-action review-action--approve" data-action="approve" type="button">Aprovar</button><button class="review-action review-action--adjust" data-action="adjust" type="button">Ajustar</button>${menu}</div>`;
+  } else {
+    const menu = menuHtml([
+      e.impl && !e.implPor ? {a:"unqueue",t:"Remover da fila"} : {a:"implement",t:"Implementar"},
+      e.impl && !e.implPor ? {a:"complete",t:"Dar baixa"} : null,
+      e.impl && e.implPor ? {a:"undo-complete",t:"Desfazer baixa"} : null,
+      ...admin
+    ], false);
+    acoes = `<details class="decision-reopen"><summary class="decision-reopen__summary">alterar decisão</summary><div class="decision-reopen__panel"><button class="review-action review-action--approve" data-action="approve" type="button">Aprovar</button><button class="review-action review-action--adjust" data-action="adjust" type="button">Ajustar</button>${menu}<button class="review-action review-action--clear" data-action="clear" type="button">limpar</button></div></details>`;
+  }
+
+  const aberta = threadsAbertas && threadsAbertas.has(id);
+  div.innerHTML = `
+    <div class="review-item__aside">
+      <div class="review-item__label">${escapeHtml(el)}</div>
+      <div class="review-item__badges">${badges}</div>
+    </div>
+    <div class="review-item__main">
+      <div class="review-item__copy">${escapeHtml(txt)}</div>
+      ${nota?`<p class="review-item__note">💡 ${escapeHtml(nota)}</p>`:""}
+      ${editor}
+      <div class="review-item__footer">
+        <div aria-label="Ações do item" class="review-item__actions">${acoes}</div>
+        ${threadItemHtml(id)}
+      </div>
+    </div>`;
+  if(aberta){ const d = div.querySelector(`details[data-thread-id="${CSS.escape(id)}"]`); if(d) d.open = true; }
+  ligarThread(div, id);
+
+  const refresh = (foco)=>{ if(ex) render(); else refreshUid(id, foco); };
+  div.addEventListener("click", (ev)=>{
+    const b = ev.target.closest("[data-action]");
+    if(!b || !div.contains(b)) return;
+    const a = b.dataset.action;
+    const fecharMenu = b.closest(".item-more-menu"); if(fecharMenu) fecharMenu.open = false;
+    if(a==="approve" || a==="validate"){
+      const temNovo = (estado[id]?.novo||"").trim();
+      if(temNovo && !confirm("Este item tem uma NOVA VERSÃO escrita e já está salvo como Ajustado.\n\nAprovar significa manter o texto ORIGINAL e DESCARTAR a nova versão.\n\nQuer mesmo descartar a nova versão?")) return;
+      const impl = estado[id]||{};
+      estado[id]={st:"ap",novo:"",revisor,papel,impl:impl.impl,implPor:impl.implPor,implEm:impl.implEm}; gravar(id); refresh();
+    }
+    if(a==="adjust"){ const impl = estado[id]||{}; estado[id]={st:"aj", novo:impl.novo || (tipo==="gap"?"":txt), revisor, papel, impl:impl.impl, implPor:impl.implPor, implEm:impl.implEm}; gravar(id); refresh(true); }
+    if(a==="implement"){ estado[id]=estado[id]||{st:"",novo:"",revisor,papel}; estado[id].impl=true; if(!estado[id].revisor) estado[id].revisor=revisor; gravar(id); refresh(); }
+    if(a==="unqueue"){ if(estado[id]){ estado[id].impl=false; estado[id].implPor=""; estado[id].implEm=null; gravar(id); refresh(); } }
+    if(a==="complete"){ if(estado[id]){ estado[id].implPor=revisor; estado[id].implEm=new Date().toISOString(); gravar(id); refresh(); } }
+    if(a==="undo-complete"){ if(estado[id]){ estado[id].implPor=""; estado[id].implEm=null; gravar(id); refresh(); } }
+    if(a==="clear"){ limpar(id); refresh(); atualizarContadores(); }
+    if(a==="admin-hide" || a==="admin-show"){
+      const acao = a==="admin-hide" ? "ocultar" : "reexibir";
+      if(acao==="ocultar" && !confirm("Ocultar este item para todo o time? (você pode reexibir depois)")) return;
+      adminAcao(acao, id).then(ok=>{
+        if(ok){ acao==="ocultar" ? ocultos.add(id) : ocultos.delete(id); render(); }
+        else alert("Chave de admin inválida.");
+      });
+    }
+    if(a==="admin-archive"){ if(confirm("Arquivar este item para todo o time? (fica guardado, some do painel)")) arquivarExtra(ex.id); }
+  });
+  const ta = div.querySelector(".revision-editor__textarea");
+  if(ta){
+    ta.oninput = ()=>{ estado[id]=estado[id]||{st:"aj"}; estado[id].novo=ta.value; estado[id].revisor=revisor; estado[id].papel=papel; gravar(id); };
+    ta.onblur = ()=>{ if(timers[id]){ clearTimeout(timers[id]); timers[id]=null; gravarAgora(id); } };
+  }
+  return div;
+}
+function formExtra(fi,ti){
+  const det = document.createElement("details");
+  det.className = "new-item";
+  det.innerHTML = `
+    <summary class="new-item__summary">＋ Novo item</summary>
+    <div class="new-item__form">
+      <label class="field-group field-group--label"><span class="field-label">Rótulo</span><input class="field-control fx-rot" maxlength="80" placeholder="Rótulo (ex.: Botão de compartilhar)" type="text"></label>
+      <label class="field-group field-group--type"><span class="field-label">Tipo</span><select class="field-control fx-tipo"><option value="">Copy para revisar</option><option value="tar">Tarefa ou regra (validar/baixa)</option><option value="gap">Falta escrever</option></select></label>
+      <button class="new-item__save fx-add" type="button">Salvar</button>
+      <label class="field-group field-group--text"><span class="field-label">Texto do item</span><textarea class="field-control field-control--textarea fx-txt" placeholder="Texto do item — copy, regra ou o que falta escrever" rows="3"></textarea></label>
+    </div>`;
+  det.querySelector(".fx-add").onclick = async ()=>{
+    const ok = await salvarExtra(fi+"|"+ti, det.querySelector(".fx-rot").value, det.querySelector(".fx-txt").value, det.querySelector(".fx-tipo").value);
+    if(ok){ render(); } else { alert("Preencha rótulo e texto."); }
+  };
+  return det;
+}
+function localizarItem(id){
+  const [fi,ti,ii] = id.split("|").map(Number);
+  return {fi,ti,ii,it:DATA[fi]?.telas[ti]?.itens[ii]};
+}
+function refreshUid(id, foco){
+  if(id.startsWith("TELA|")) return;
+  const alvo = document.querySelector(`[data-uid="${CSS.escape(id)}"]`);
+  const {fi,ti,ii,it} = localizarItem(id);
+  if(!alvo || !it) return;
+  const threadsAbertas = new Set(Array.from(document.querySelectorAll("details.review-thread[open]")).map(d=>d.dataset.threadId));
+  const novo = renderItem(fi,ti,ii,it,null,threadsAbertas);
+  alvo.replaceWith(novo);
+  const card = document.querySelector(`.screen-card[data-key="${fi}-${ti}"]`);
+  if(card){ const s = statsCard(fi,ti); const p = card.querySelector(".screen-card__progress"); if(p) p.textContent = `${s.done}/${s.total}`; }
+  if(foco){ const ta=novo.querySelector(".revision-editor__textarea"); if(ta){ ta.focus(); ta.selectionStart = ta.value.length; } }
+  atualizarContadores();
+}
+function atualizarContadores(){
+  let ap=0,aj=0,tot=0;
+  DATA.forEach((fl,fi)=>fl.telas.forEach((t,ti)=>t.itens.forEach((it,ii)=>{
+    if((it[2]||"")==="jur") return;
+    tot++;
+    const st = estado[uid(fi,ti,ii)]?.st;
+    if(st==="ap")ap++; if(st==="aj")aj++;
+  })));
+  Object.values(extras).flat().forEach(x=>{ tot++; const st=estado["X|"+x.id]?.st; if(st==="ap")ap++; if(st==="aj")aj++; });
+  ocultos.forEach(id=>{ if(!id.startsWith("X|")){ tot--; const st=estado[id]?.st; if(st==="ap")ap--; if(st==="aj")aj--; } });
+  document.getElementById("nAp").textContent=ap;
+  document.getElementById("nAj").textContent=aj;
+  document.getElementById("nPe").textContent=tot-ap-aj;
+  document.getElementById("prog").textContent=(ap+aj)+" / "+tot;
+  document.getElementById("barra").style.width = tot? (100*(ap+aj)/tot)+"%" : "0%";
+}
+document.getElementById("filtros").onclick = (ev)=>{
+  const b = ev.target.closest("button"); if(!b) return;
+  document.querySelectorAll("#filtros button").forEach(x=>x.classList.remove("is-active"));
+  b.classList.add("is-active"); filtroAtivo = b.dataset.f; render();
+};
+
+/* cards: abrir/fechar (delegação) */
+document.addEventListener("click", (ev)=>{
+  const fig = ev.target.closest(".screen-card__figma");
+  if(fig){ ev.stopPropagation(); window.open(fig.dataset.href, "_blank", "noopener"); return; }
+  const t = ev.target.closest("[data-screen-toggle]");
+  if(t){
+    const card = t.closest(".screen-card");
+    const aberto = card.classList.toggle("is-open");
+    t.setAttribute("aria-expanded", String(aberto));
+  }
+});
+/* menus ⋯: fechar ao clicar fora */
+document.addEventListener("click", (ev)=>{
+  document.querySelectorAll("details.item-more-menu[open]").forEach(d=>{
+    if(!d.contains(ev.target)) d.open = false;
+  });
+});
+
+/* ═══ guia de 10 segundos ═══ */
+const guia = document.getElementById("guia");
+if(localStorage.getItem("crivo_guia") === "1"){ guia.removeAttribute("open"); }
+guia.addEventListener("toggle", ()=>{ if(!guia.open) localStorage.setItem("crivo_guia","1"); });
+
+/* ═══ relatórios ═══ */
+let txtAtual = "", nomeArq = "relatorio.md";
+window.copiarTxt = ()=>navigator.clipboard.writeText(txtAtual).then(()=>alert("Copiado!"));
+window.baixarTxt = ()=>{ const b=new Blob([txtAtual],{type:"text/markdown"}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=nomeArq; a.click(); };
+window.exportar = function(tipo){
+  const d = new Date().toLocaleDateString("pt-BR");
+  let out = "";
+  const nomeDe = (e)=> e?.revisor ? `${e.revisor} (${e.papel||"?"})` : "";
+
+  if(tipo==="ia"){
+    out = `# ${PROJETO} — Relatório de implementação (${d})\nGerado pelo painel Crivo. Aplicar cada alteração DE → PARA exatamente como escrito, incluindo pontuação. Itens 🔒 travados não podem ser alterados.\n\n`;
+    let copyOut = "";
+    DATA.forEach((fl,fi)=>{ let bloco="";
+      fl.telas.forEach((t,ti)=>{ if(t.id==="TOKENS"||t.id==="REGRAS") return; let l="";
+        t.itens.forEach((it,ii)=>{ const e=estado[uid(fi,ti,ii)]; const tp=it[2]||"";
+          if(tp==="jur"||tp==="tar"||ocultos.has(uid(fi,ti,ii))) return;
+          if(e?.st==="aj" && (e.novo||"").trim()){
+            l += tp==="gap" ? `- **${it[0]}** — COPY NOVA:\n  - INSERIR: "${e.novo.trim()}"\n`
+                            : `- **${it[0]}**\n  - DE: "${it[1]}"\n  - PARA: "${e.novo.trim()}"\n`;
+            l += `  - Por: ${nomeDe(e)}\n`;
+            (cmts[uid(fi,ti,ii)]||[]).forEach(c=>{ l+=`  - 💬 ${c.autor}: ${c.texto}\n`; });
+          }});
+        if(l) bloco += `### ${t.id} — ${t.nome}\n${l}\n`; });
+      if(bloco) copyOut += `## ${fl.fluxo}\n\n${bloco}`; });
+    out += copyOut || "## Copy\n\n_Nenhuma alteração de copy registrada ainda._\n\n";
+    let tkOut = "";
+    DATA.forEach((fl,fi)=>fl.telas.forEach((t,ti)=>{ if(t.id!=="TOKENS") return;
+      t.itens.forEach((it,ii)=>{
+        const e = estado[uid(fi,ti,ii)];
+        const texto = (e?.st==="aj" && (e.novo||"").trim()) ? e.novo.trim() : it[1];
+        const valor = texto.split(" — ")[0].trim();
+        const stTxt = e?.st==="ap" ? `aprovado por ${nomeDe(e)}` : e?.st==="aj" ? `ajustado por ${nomeDe(e)}` : "pendente de validação";
+        tkOut += `  ${it[0]}: ${valor}; /* ${stTxt} */\n`;
+      });
+    }));
+    if(tkOut) out += `## Tokens de design — usar como constantes\n\n\`\`\`css\n:root{\n${tkOut}}\n\`\`\`\n\n`;
+    let rgOut = "";
+    DATA.forEach((fl,fi)=>fl.telas.forEach((t,ti)=>{ if(t.id!=="REGRAS") return;
+      t.itens.forEach((it,ii)=>{ const e = estado[uid(fi,ti,ii)];
+        rgOut += `- [${e?.st==="ap"?"x":" "}] **${it[0]}** — ${it[1]}`;
+        if(e?.st==="ap") rgOut += ` _(validada por ${nomeDe(e)})_`;
+        if(e?.impl && !e?.implPor) rgOut += ` **→ 🚧 na fila de implementação**`;
+        if(e?.impl && e?.implPor) rgOut += ` **→ ✅ implementada por ${e.implPor}**`;
+        rgOut += `\n`;
+        (cmts[uid(fi,ti,ii)]||[]).forEach(c=>{ rgOut+=`  - 💬 ${c.autor}: ${c.texto}\n`; });
+      });
+    }));
+    if(rgOut) out += `## Regras de negócio — checklist\n\n${rgOut}\n`;
+    let implOut = "";
+    DATA.forEach((fl,fi)=>fl.telas.forEach((t,ti)=>t.itens.forEach((it,ii)=>{
+      const id = uid(fi,ti,ii); const e = estado[id];
+      if(e?.impl && !e?.implPor && !ocultos.has(id)){
+        const textoFinal = (e.st==="aj" && (e.novo||"").trim()) ? e.novo.trim() : it[1];
+        implOut += `- **${t.id} · ${it[0]}** — TEXTO/REGRA FINAL: "${textoFinal}"\n`;
+      }
+    })));
+    Object.entries(extras).forEach(([ck, lista])=>{
+      const [fi,ti] = ck.split("|").map(Number);
+      const t = DATA[fi]?.telas[ti]; if(!t) return;
+      lista.forEach(x=>{
+        const e = estado["X|"+x.id];
+        if(e?.impl && !e?.implPor){
+          const textoFinal = (e.st==="aj" && (e.novo||"").trim()) ? e.novo.trim() : x.texto;
+          implOut += `- **${t.id} · ${x.rotulo}** (criado no painel) — TEXTO/REGRA FINAL: "${textoFinal}"\n`;
+        }
+      });
+    });
+    if(implOut) out += `## 🚧 Fila de implementação\n\n${implOut}\n`;
+    let extrasOut = "";
+    Object.entries(extras).forEach(([ck, lista])=>{
+      const [fi,ti] = ck.split("|").map(Number);
+      const t = DATA[fi]?.telas[ti]; if(!t) return;
+      lista.forEach(x=>{
+        const e = estado["X|"+x.id];
+        if(x.tipo!=="tar" && e?.st==="aj" && (e.novo||"").trim()){
+          extrasOut += `### ${t.id} — ${t.nome} (item criado no painel por ${x.autor})\n- **${x.rotulo}**\n  - DE: "${x.texto}"\n  - PARA: "${e.novo.trim()}"\n\n`;
+        } else if(x.tipo!=="tar" && e?.st==="ap"){
+          extrasOut += `### ${t.id} — ${t.nome} (item criado no painel por ${x.autor})\n- **${x.rotulo}** — APROVADO: "${x.texto}"\n\n`;
+        }
+      });
+    });
+    if(extrasOut) out += `## Itens criados no painel\n\n${extrasOut}`;
+    nomeArq = "relatorio_implementacao.md";
+  }
+
+  if(tipo==="design"){
+    out = `# ${PROJETO} — Tarefas e apontamentos de design (${d})\n\n`;
+    let tarOut = "";
+    DATA.forEach((fl,fi)=>fl.telas.forEach((t,ti)=>{ if(t.id==="REGRAS") return;
+      let l="";
+      t.itens.forEach((it,ii)=>{ if((it[2]||"")!=="tar") return; const e=estado[uid(fi,ti,ii)];
+        l += `- [${e?.st==="ap"?"x":" "}] **${it[0]}** — ${it[1]}${e?.st==="ap"?` _(feita por ${e.revisor})_`:""}\n`;
+        (cmts[uid(fi,ti,ii)]||[]).forEach(c=>{ l+=`  - 💬 ${c.autor}: ${c.texto}\n`; });
+      });
+      if(l) tarOut += `### ${t.id} — ${t.nome}\n${l}\n`;
+    }));
+    out += tarOut ? `## Tarefas\n\n${tarOut}` : `## Tarefas\n\n_Nenhuma tarefa de design aberta._\n\n`;
+    let apOut = "";
+    DATA.forEach((fl,fi)=>fl.telas.forEach((t,ti)=>{ const th = cmts["TELA|"+fi+"|"+ti]||[];
+      if(th.length){ apOut+=`\n### ${t.id} — ${t.nome}\n`; th.forEach(c=>{ apOut+=`- ${c.autor} (${c.papel}): ${c.texto}\n`; }); } }));
+    if(apOut) out += `## Conversas por tela\n${apOut}`;
+    let extrasTar = "";
+    Object.entries(extras).forEach(([ck, lista])=>{
+      const [fi,ti] = ck.split("|").map(Number);
+      const t = DATA[fi]?.telas[ti]; if(!t) return;
+      lista.filter(x=>x.tipo==="tar").forEach(x=>{
+        const e = estado["X|"+x.id];
+        extrasTar += `- [${e?.st==="ap"?"x":" "}] **${x.rotulo}** (${t.id}, criado por ${x.autor}) — ${x.texto}${e?.st==="ap"?` _(feita por ${e.revisor})_`:""}\n`;
+      });
+    });
+    if(extrasTar) out += `\n## Tarefas criadas no painel\n${extrasTar}`;
+    nomeArq = "tarefas_design.md";
+  }
+
+  if(tipo==="decisoes"){
+    out = `# ${PROJETO} — Registro de decisões (${d})\nTudo o que o time decidiu até agora, com assinatura. ✓ aprovado · ✏️ ajustado · ⏳ pendente · 🔒 travado\n\n`;
+    DATA.forEach((fl,fi)=>{
+      out += `## ${fl.fluxo}\n\n`;
+      fl.telas.forEach((t,ti)=>{
+        out += `### ${t.id} — ${t.nome}\n`;
+        t.itens.forEach((it,ii)=>{
+          const id = uid(fi,ti,ii);
+          if(ocultos.has(id)) return;
+          const e = estado[id]; const tp = it[2]||"";
+          const ic = tp==="jur" ? "🔒" : e?.st==="ap" ? "✓" : e?.st==="aj" ? "✏️" : "⏳";
+          out += `- ${ic} **${it[0]}**`;
+          if(e?.st==="aj" && (e.novo||"").trim()) out += ` — nova versão: "${e.novo.trim()}"`;
+          if(e?.revisor) out += ` — por ${nomeDe(e)}`;
+          if(e?.impl && !e?.implPor) out += ` · 🚧 a implementar`;
+          if(e?.impl && e?.implPor) out += ` · implementado por ${e.implPor}`;
+          out += `\n`;
+          (cmts[id]||[]).forEach(c=>{ out+=`  - 💬 ${c.autor} (${c.papel}): ${c.texto}\n`; });
+        });
+        (extras[fi+"|"+ti]||[]).forEach(x=>{
+          const e = estado["X|"+x.id];
+          const ic = e?.st==="ap" ? "✓" : e?.st==="aj" ? "✏️" : "⏳";
+          out += `- ${ic} **${x.rotulo}** (criado no painel por ${x.autor})`;
+          if(e?.revisor) out += ` — por ${nomeDe(e)}`;
+          out += `\n`;
+        });
+        out += `\n`;
+      });
+    });
+    nomeArq = "registro_decisoes.md";
+  }
+
+  txtAtual = out;
+  document.getElementById("dlgT").textContent = {ia:"Relatório para implementação (dev ou IA)",design:"Tarefas e apontamentos de design",decisoes:"Registro de decisões"}[tipo];
+  document.getElementById("dlgPre").textContent = out;
+  document.getElementById("dlg").showModal();
+};
+
+/* ═══ admin ═══ */
+function atualizarBotaoAdmin(){
+  const b = document.getElementById("btnAdmin");
+  if(!b) return;
+  if(isAdmin){ b.textContent = "🔑"; b.style.background = "var(--yellow)"; b.style.color = "var(--ink)"; b.title = "Admin ativo — tocar para sair"; }
+  else { b.textContent = "🔑"; b.style.background = ""; b.style.color = ""; b.title = "Chave de administrador"; }
+}
+document.getElementById("btnAdmin").onclick = async ()=>{
+  if(isAdmin){
+    if(confirm("Sair do modo admin neste navegador?")){ isAdmin=false; adminToken=""; localStorage.removeItem("crivo_admin"); atualizarBotaoAdmin(); render(); }
+    return;
+  }
+  const t = (prompt("Chave de administrador:")||"").trim();
+  if(!t) return;
+  adminToken = t;
+  const ok = await adminAcao("validar");
+  if(ok){ isAdmin = true; localStorage.setItem("crivo_admin", t); atualizarBotaoAdmin(); render(); }
+  else { adminToken=""; alert("Chave inválida."); }
+};
+const dlgMover = document.getElementById("mover");
+let moverCid = null;
+document.addEventListener("click", (ev)=>{
+  const b = ev.target.closest?.(".cmt-mover");
+  if(!b) return;
+  moverCid = b.dataset.cid;
+  const sel = document.getElementById("moverSel");
+  if(!sel.options.length){
+    DATA.forEach((fl,fi)=>{
+      fl.telas.forEach((t,ti)=>{
+        const o = document.createElement("option");
+        o.value = `TELA|${fi}|${ti}`;
+        o.textContent = `${t.id} — ${t.nome}`;
+        sel.appendChild(o);
+      });
+    });
+  }
+  dlgMover.showModal();
+});
+document.getElementById("moverX").onclick = ()=>dlgMover.close();
+document.getElementById("moverOk").onclick = async ()=>{
+  const destino = document.getElementById("moverSel").value;
+  if(!destino || !moverCid) return;
+  if(DEMO){ dlgMover.close(); return; }
+  const { data } = await sb.rpc("mover_comentario", {p_id:+moverCid, p_destino:destino});
+  if(data === true){
+    for(const lista of Object.values(cmts)){
+      const i = lista.findIndex(x=>String(x.id)===String(moverCid));
+      if(i>=0){
+        const cm = lista.splice(i,1)[0];
+        (cmts[destino]=cmts[destino]||[]).push(cm);
+        cmts[destino].sort((a,b)=>String(a.hora).localeCompare(String(b.hora)));
+        break;
+      }
+    }
+    dlgMover.close(); render();
+  } else alert("Não consegui mover — talvez já tenha sido movido por outra pessoa.");
+};
+document.addEventListener("click", async (ev)=>{
+  const a = ev.target.closest?.(".cmt-autor");
+  if(!a || !isAdmin) return;
+  const novo = (prompt("Novo nome do autor deste comentário:", a.textContent)||"").trim();
+  if(!novo || novo === a.textContent) return;
+  const ok = await adminAcao("comentario_autor", a.dataset.cid + "|" + novo);
+  if(ok){
+    Object.values(cmts).flat().forEach(c=>{ if(String(c.id)===String(a.dataset.cid)) c.autor = novo; });
+    a.textContent = novo;
+  } else alert("Não foi possível renomear (chave de admin inválida?).");
+});
+
+/* diálogos: fechar */
+document.querySelectorAll("[data-dialog-close]").forEach(b=>{ b.onclick = ()=>b.closest("dialog")?.close(); });
+document.querySelectorAll("dialog").forEach(d=>{ d.addEventListener("click",(ev)=>{ if(ev.target===d) d.close(); }); });
+
+/* ═══ início ═══ */
+if(DEMO) setConex("demo");
+async function iniciar(){ await conectar(); carregar(); assinar(); }
+if(revisor && papel){
+  marcarQuem();
+  iniciar();
+} else {
+  document.getElementById("login-dialog").showModal();
+}
+</script>
+</body>
+</html>
